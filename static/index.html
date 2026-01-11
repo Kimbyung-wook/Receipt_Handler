@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사내 영수증 OCR 관리 시스템</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding-top: 50px; }
+        .container { max-width: 1100px; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .upload-zone { border: 2px dashed #dee2e6; padding: 40px; text-align: center; border-radius: 10px; cursor: pointer; transition: 0.3s; }
+        .upload-zone:hover { border-color: #0d6efd; background-color: #f0f7ff; }
+        .preview-img { max-width: 100%; height: auto; border: 1px solid #ddd; }
+        #fileList { margin-top: 20px; }
+        .status-badge { font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2 class="mb-4 text-center">🧾 영수증 OCR 정보 추출 시스템</h2>
+    
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5 class="card-title">인증 설정</h5>
+            <div class="row g-3 align-items-center">
+                <div class="col-auto">
+                    <label for="serviceKey" class="col-form-label">국세청 API 키 (Service Key)</label>
+                </div>
+                <div class="col-md-6">
+                    <input type="password" id="serviceKey" class="form-control" placeholder="비어있을 경우 서버 기본값을 사용합니다.">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="upload-zone" id="dropZone">
+        <h5>파일을 드래그하거나 클릭하여 업로드하세요.</h5>
+        <p class="text-muted">(JPG, PNG, PDF 지원)</p>
+        <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.pdf" style="display: none;">
+        <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+    </div>
+
+    <div id="fileList" class="list-group mb-4"></div>
+
+    <div class="d-flex justify-content-end gap-2 mb-4">
+        <button id="clearBtn" class="btn btn-outline-danger">전체 삭제</button>
+        <button id="processBtn" class="btn btn-success">OCR 처리 시작</button>
+    </div>
+
+    <hr>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>추출 결과 (추적성 포함)</h4>
+        <button id="downloadCsv" class="btn btn-dark btn-sm" disabled>CSV 다운로드</button>
+    </div>
+    
+    <div class="table-responsive">
+        <table class="table table-hover align-middle">
+            <thead class="table-light">
+                <tr>
+                    <th>원본 파일명</th>
+                    <th>변환 후 파일명 (다운로드)</th>
+                    <th>가맹점명</th>
+                    <th>사업자번호</th>
+                    <th>결제일자</th>
+                    <th>결제금액</th>
+                    <th>과세유형</th>
+                    <th>미리보기</th>
+                </tr>
+            </thead>
+            <tbody id="resultTableBody">
+                </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">OCR 분석 이미지</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="modalImg" src="" class="preview-img" alt="OCR 결과">
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const fileList = document.getElementById('fileList');
+    const resultTableBody = document.getElementById('resultTableBody');
+    const downloadCsv = document.getElementById('downloadCsv');
+    
+    let uploadedFiles = [];
+
+    // 1. 파일 선택 및 UI 표시
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+    
+    function handleFiles(files) {
+        for (let file of files) {
+            uploadedFiles.push(file);
+            const item = document.createElement('div');
+            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+            item.innerHTML = `
+                <span>${file.name} <small class="text-muted">(${(file.size/1024).toFixed(1)} KB)</small></span>
+                <button class="btn btn-sm btn-outline-danger" onclick="removeFile('${file.name}')">삭제</button>
+            `;
+            fileList.appendChild(item);
+        }
+    }
+
+    function removeFile(name) {
+        uploadedFiles = uploadedFiles.filter(f => f.name !== name);
+        renderFileList();
+    }
+
+    function renderFileList() {
+        fileList.innerHTML = '';
+        uploadedFiles.forEach(f => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item d-flex justify-content-between align-items-center';
+            item.innerHTML = `<span>${f.name}</span> <button class="btn btn-sm btn-outline-danger" onclick="removeFile('${f.name}')">삭제</button>`;
+            fileList.appendChild(item);
+        });
+    }
+
+    // 2. 서버 전송 및 OCR 처리
+    document.getElementById('processBtn').addEventListener('click', async () => {
+        if (uploadedFiles.length === 0) return alert('파일을 업로드하세요.');
+        
+        const formData = new FormData();
+        uploadedFiles.forEach(f => formData.append('files', f));
+        formData.append('user_key', document.getElementById('serviceKey').value);
+
+        // 로딩 상태 표시
+        document.getElementById('processBtn').disabled = true;
+        document.getElementById('processBtn').innerText = '처리 중...';
+
+        try {
+            const response = await fetch('/api/upload', { method: 'POST', body: formData });
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                updateTable(result.data);
+                downloadCsv.disabled = false;
+            }
+        } catch (err) {
+            alert('처리 중 오류가 발생했습니다.');
+        } finally {
+            document.getElementById('processBtn').disabled = false;
+            document.getElementById('processBtn').innerText = 'OCR 처리 시작';
+        }
+    });
+
+    // 3. 결과 표 업데이트
+    function updateTable(data) {
+        resultTableBody.innerHTML = '';
+        data.forEach(item => {
+            const row = `
+                <tr>
+                    <td>${item.original_name}</td>
+                    <td><a href="/ocr_result/${item.renamed_name}" download>${item.renamed_name}</a></td>
+                    <td>${item.merchant || 'Unknown'}</td>
+                    <td>${item.biz_no || '-'}</td>
+                    <td>${item.pay_date || '-'}</td>
+                    <td>${Number(item.amount).toLocaleString()}원</td>
+                    <td><span class="badge bg-info">${item.tax_type}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-primary" onclick="showPreview('/ocr_result/${item.renamed_name}')">보기</button>
+                    </td>
+                </tr>
+            `;
+            resultTableBody.insertAdjacentHTML('beforeend', row);
+        });
+    }
+
+    // 4. 미리보기 모달
+    function showPreview(url) {
+        document.getElementById('modalImg').src = url;
+        new bootstrap.Modal(document.getElementById('previewModal')).show();
+    }
+
+    // 5. CSV 다운로드
+    downloadCsv.addEventListener('click', () => {
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // 한글 깨짐 방지 BOM
+        csvContent += "원본파일명,변환파일명,가맹점,사업자번호,결제일자,금액,과세유형\n";
+        
+        const rows = resultTableBody.querySelectorAll('tr');
+        rows.forEach(row => {
+            const cols = row.querySelectorAll('td');
+            const rowData = Array.from(cols).slice(0, 7).map(c => c.innerText.replace(/,/g, '')).join(",");
+            csvContent += rowData + "\n";
+        });
+
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "receipt_summary.csv");
+        document.body.appendChild(link);
+        link.click();
+    });
+</script>
+
+</body>
+</html>
