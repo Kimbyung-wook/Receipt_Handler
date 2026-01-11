@@ -311,7 +311,7 @@ def get_tax_type_from_nts(biz_no, service_key):
     # print("type biz_no : ", type(biz_no))
     if not biz_no:
         print("Biz_no is not exist")
-        return "불명"
+        return "오류"
 
     url = "https://api.odcloud.kr/api/nts-businessman/v1/status"
     payload = {"b_no": [biz_no.replace("-", "")]}
@@ -326,14 +326,14 @@ def get_tax_type_from_nts(biz_no, service_key):
             data = r.json()
 
             info = data["data"][0]
-            return info.get("tax_type", "불명")
+            return info.get("tax_type", "오류")
 
         except Exception:
             print("Failed to get TaxType from Biz_no : ", biz_no)
         
         if(i == 3):
             print("Finally Failed to get TaxType from Biz_no : ", biz_no)
-            return "불명"
+            return "오류"
         
 
 
@@ -344,7 +344,7 @@ def normalize_tax_type(tax_type):
         return "간이"
     if "면세" in tax_type:
         return "면세"
-    return "UNKNOWN"
+    return "오류"
 
 # ===============================
 # 5. 파일명 정리
