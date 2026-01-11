@@ -14,13 +14,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from paddleocr import PaddleOCR
 from PIL import Image, ImageDraw, ImageFont
 from pdf2image import convert_from_path
+import zipfile
+from io import BytesIO
+import platform
 
 # 작성하신 파서 파일에서 함수 임포트
 from receipt_parser_paddle_multi_thread import (
     extract_text_from_paddle, get_ocr_lines, extract_biz_number, 
     extract_merchant_name, extract_payment_date_with_keyword, 
     extract_payment_date_without_keyword, extract_payment_amount, 
-    resize_for_ocr, get_tax_type_from_nts
+    resize_for_ocr, get_tax_type_from_nts, normalize_tax_type
 )
 
 # --- 1. 환경 및 설정 로드 ---
@@ -99,23 +102,44 @@ def extract_payment_amount(lines):
         for n in nums: candidates.append(int(n.replace(",", "")))
     return max(candidates) if candidates else 0
 
-# def get_tax_type_from_nts(biz_no, service_key):
-#     if not biz_no or not service_key: return "미확인"
-#     url = "https://api.odcloud.kr/api/nts-businessman/v1/status"
-#     try:
-#         r = requests.post(url, json={"b_no": [biz_no.replace("-", "")]}, 
-#                           params={"serviceKey": service_key}, timeout=5)
-#         res = r.json()["data"][0].get("tax_type", "미확인")
-#         return "일반" if "일반" in res else "간이" if "간이" in res else "면세" if "면세" in res else "미확인"
-#     except: return "미확인"
-
 # --- 4. 좌표 오류 해결된 이미지 그리기 ---
+def get_system_font(font_size=20):
+    os_name = platform.system()
+    
+    # OS별 기본 폰트 경로 후보
+    if os_name == "Windows":
+        # 윈도우: 맑은 고딕
+        font_path = "C:/Windows/Fonts/malgun.ttf"
+    elif os_name == "Linux":
+        # 리눅스(Ubuntu 등): 나눔고딕 또는 백묵 폰트
+        # 경로 예시: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
+        candidates = [
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" # 최후의 수단
+        ]
+        font_path = next((p for p in candidates if os.path.exists(p)), None)
+    elif os_name == "Darwin":
+        # macOS: 애플 고딕
+        font_path = "/System/Library/Fonts/Supplemental/AppleGothic.ttf"
+    else:
+        font_path = None
+
+    # 폰트 로드 시도
+    try:
+        if font_path and os.path.exists(font_path):
+            return ImageFont.truetype(font_path, font_size)
+        else:
+            # 폰트 파일이 없으면 기본 폰트 반환
+            return ImageFont.load_default()
+    except Exception:
+        return ImageFont.load_default()
+
 def draw_bb_on_img(img_arr, result, save_path):
     image_pil = Image.fromarray(img_arr)
     draw = ImageDraw.Draw(image_pil)
 
-    try: font = ImageFont.truetype("malgun.ttf", 15)
-    except: font = ImageFont.load_default()
+    font = get_system_font(20)
 
     # Bounding Box 및 텍스트 표시
     for i in range(np.shape(result['rec_boxes'])[0]):
@@ -188,46 +212,37 @@ async def upload_receipts(request: Request, files: List[UploadFile] = File(...),
                 pay_date = extract_payment_date_without_keyword(text)
 
             biz_no = extract_biz_number(text)
-            pay_date = extract_payment_date(text, textline)
             merchant = extract_merchant_name(textline)
             amount = extract_payment_amount(textline)
-            
-            # # 이미지 변환 로직
-            # if file.filename.lower().endswith(".pdf"):
-            #     pages = convert_from_path(temp_path, dpi=200)
-            #     img_arr = np.array(pages[0])
-            # else:
-            #     img_arr = cv2.imdecode(np.fromfile(temp_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-            #     img_arr = cv2.cvtColor(img_arr, cv2.COLOR_BGR2RGB)
-
-            # ocr_res = ocr_engine.ocr(img_arr)
-            # lines = [line[1][0] for line in ocr_res[0]] if ocr_res[0] else []
-            # all_text = "\n".join(lines)
-            # print(lines)
-            # print(all_text)
-            
-            # # 정보 추출
-            # biz_no = extract_biz_number(all_text)
-            # pay_date = extract_payment_date(all_text, lines)
-            # merchant = extract_merchant_name(lines)
-            # amount = extract_payment_amount(lines)
             
             # API 호출 및 로그 기록
             tax_type = "미확인"
             if biz_no and active_key:
                 log_api_call(client_ip)
                 tax_type = get_tax_type_from_nts(biz_no, active_key)
+                tax_type = normalize_tax_type(tax_type)
 
             # 파일명 변경 규칙 적용
             # [YYMMDD]_[TaxType]_[Amount]_[Merchant]
-            renamed_name = f"{pay_date}_{tax_type}_{amount}_{merchant}.jpg"
-            save_path = os.path.join(RESULT_DIR, renamed_name)
+            renamed_name     = f"{pay_date}_{tax_type}_{amount}_{merchant}.png"
+            visualized_name  = f"{pay_date}_{tax_type}_{amount}_{merchant}_vis.png"
             
-            draw_bb_on_img(img_arr, ocr_res, save_path)
+            # Old
+            # save_path = os.path.join(RESULT_DIR, renamed_name)
+            # draw_bb_on_img(img_arr, ocr_res, save_path)
+
+            # New
+            # (A) 이름만 바뀐 원본 이미지 저장
+            final_origin_path = os.path.join(RESULT_DIR, renamed_name)
+            Image.fromarray(img_arr).save(final_origin_path)
+            
+            # (B) OCR 결과(BB)가 포함된 이미지 별도 저장
+            draw_bb_on_img(img_arr, ocr_res, os.path.join(OCR_VIS_DIR, visualized_name))
 
             results.append({
                 "original_name": file.filename,
                 "renamed_name": renamed_name,
+                "vis_name": visualized_name,
                 "merchant": merchant,
                 "biz_no": biz_no,
                 "pay_date": pay_date,
@@ -235,10 +250,39 @@ async def upload_receipts(request: Request, files: List[UploadFile] = File(...),
                 "tax_type": tax_type
             })
         # except Exception as e:
-        #     print(f"Error: {e}")
-        #     continue
+        #    print(f"Error processing {file.filename}: {e}")
 
     return {"status": "success", "data": results}
+
+# 전체 다운로드 (Zip) 기능 추가
+from fastapi.responses import StreamingResponse
+@app.get("/api/download_all/{type}")
+async def download_all(type: str):
+    # 다운로드할 폴더 결정
+    folder = RESULT_DIR if type == "origin" else OCR_VIS_DIR
+    zip_filename = f"receipts_{type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    
+    # 메모리 버퍼 생성
+    memory_file = BytesIO()
+    
+    # Zip 파일 생성
+    with zipfile.ZipFile(memory_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        for filename in os.listdir(folder):
+                    file_path = os.path.join(folder, filename)
+                    
+                    # 폴더가 아닌 '파일'인 경우에만 Zip에 추가
+                    if os.path.isfile(file_path):
+                        zf.write(file_path, filename)
+    
+    # 버퍼의 포인터를 처음으로 이동
+    memory_file.seek(0)
+    
+    # StreamingResponse를 통해 전달
+    return StreamingResponse(
+        memory_file,
+        media_type="application/x-zip-compressed",
+        headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+    )
 
 @app.get("/")
 async def read_index(): return FileResponse('static/index.html')

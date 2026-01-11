@@ -52,26 +52,27 @@
     <hr>
 
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <h4>추출 결과 (추적성 포함)</h4>
-        <button id="downloadCsv" class="btn btn-dark btn-sm" disabled>CSV 다운로드</button>
+        <h4>추출 결과</h4>
+        <div>
+            <button id="downloadOriginZip" class="btn btn-primary btn-sm">변환 파일 전체 다운로드</button>
+            <button id="downloadVisZip" class="btn btn-outline-success btn-sm">OCR 결과 전체 다운로드</button>
+            <button id="downloadCsv" class="btn btn-dark btn-sm" disabled>CSV 다운로드</button>
+        </div>
     </div>
-    
+
     <div class="table-responsive">
         <table class="table table-hover align-middle">
             <thead class="table-light">
                 <tr>
-                    <th>원본 파일명</th>
-                    <th>변환 후 파일명 (다운로드)</th>
-                    <th>가맹점명</th>
-                    <th>사업자번호</th>
-                    <th>결제일자</th>
-                    <th>결제금액</th>
+                    <th>원본파일명</th>
+                    <th>변환파일명<br>(클릭시 다운)</th>
+                    <th>가맹점</th>
+                    <th>금액</th>
                     <th>과세유형</th>
-                    <th>미리보기</th>
+                    <th>작업</th>
                 </tr>
             </thead>
-            <tbody id="resultTableBody">
-                </tbody>
+            <tbody id="resultTableBody"></tbody>
         </table>
     </div>
 </div>
@@ -142,19 +143,25 @@
     document.getElementById('processBtn').addEventListener('click', async () => {
         if (uploadedFiles.length === 0) return alert('파일을 업로드하세요.');
         
+        const processBtn = document.getElementById('processBtn');
         const formData = new FormData();
-        // 1. 백엔드의 'files' 매개변수 이름과 일치시켜야 함
+        
         uploadedFiles.forEach(f => {
             formData.append('files', f); 
         });
 
-        // 2. serviceKey 입력창 존재 여부 확인 후 추가
         const sKeyInput = document.getElementById('serviceKey');
         const sKeyValue = sKeyInput ? sKeyInput.value : "";
         formData.append('user_key', sKeyValue);
 
-        document.getElementById('processBtn').disabled = true;
-        document.getElementById('processBtn').innerText = '처리 중...';
+        // --- 애니메이션 로직 시작 ---
+        processBtn.disabled = true;
+        let dotCount = 1;
+        const loadingInterval = setInterval(() => {
+            processBtn.innerText = `처리중${'.'.repeat(dotCount)}`;
+            dotCount = (dotCount >= 6) ? 1 : dotCount + 1;
+        }, 250); // 0.5초마다 점 추가
+        // -------------------------
 
         try {
             const response = await fetch('/api/upload', { 
@@ -164,41 +171,76 @@
             
             if (!response.ok) throw new Error('서버 응답 오류');
             
+            // 4. 처리 완료 팝업 (OCR 시작 버튼 로직 내부)
             const result = await response.json();
             if (result.status === 'success') {
                 updateTable(result.data);
+                document.getElementById('downloadOriginZip').disabled = false;
+                document.getElementById('downloadVisZip').disabled = false;
                 document.getElementById('downloadCsv').disabled = false;
-                updateUsage(); // 호출 횟수 갱신
+                if (typeof updateUsage === "function") updateUsage(); 
+                // [수정] 성공 시 팝업 알림
+                setTimeout(() => alert("✅ 모든 영수증 처리가 완료되었습니다!"), 100);
             }
         } catch (err) {
             console.error(err);
             alert('처리 중 오류가 발생했습니다. 서버 콘솔을 확인하세요.');
         } finally {
-            document.getElementById('processBtn').disabled = false;
-            document.getElementById('processBtn').innerText = 'OCR 처리 시작';
+            // --- 애니메이션 로직 종료 ---
+            clearInterval(loadingInterval); // 반복 멈춤
+            processBtn.disabled = false;
+            processBtn.innerText = 'OCR 처리 시작'; // 원래 텍스트로 복구
+            // -------------------------
         }
     });
+    // 1. 과세분류별 배지 스타일 지정 함수 (연한 색상 적용)
+    function getTaxBadge(taxType) {
+        let bgClass = "";
+        switch(taxType) {
+            case '일반': bgClass = "bg-success-subtle text-success border border-success-subtle"; break; // 연한 초록
+            case '간이': bgClass = "bg-warning-subtle text-warning-emphasis border border-warning-subtle"; break; // 연한 주황
+            case '면세': bgClass = "bg-info-subtle text-info border border-info-subtle"; break; // 연한 푸른
+            default: bgClass = "bg-danger-subtle text-danger border border-danger-subtle"; // 연한 붉은 (불명/미확인)
+        }
+        return `<span class="badge ${bgClass}" style="font-weight: 500;">${taxType}</span>`;
+    }
+
+    // 2. 결과 테이블 업데이트 (사업자번호 추가)
+    let lastResultData = []; // CSV 저장을 위해 최신 데이터를 전역으로 관리
+
     // 3. 결과 표 업데이트
     function updateTable(data) {
-        resultTableBody.innerHTML = '';
+        lastResultData = data; // 데이터 보관
+        const tbody = document.getElementById('resultTableBody');
+        tbody.innerHTML = '';
+        
         data.forEach(item => {
             const row = `
                 <tr>
-                    <td>${item.original_name}</td>
-                    <td><a href="/ocr_result/${item.renamed_name}" download>${item.renamed_name}</a></td>
-                    <td>${item.merchant || 'Unknown'}</td>
-                    <td>${item.biz_no || '-'}</td>
-                    <td>${item.pay_date || '-'}</td>
-                    <td>${Number(item.amount).toLocaleString()}원</td>
-                    <td><span class="badge bg-info">${item.tax_type}</span></td>
+                    <td><small class="text-muted">${item.original_name}</small></td>
+                    <td><a href="/ocr_result/${item.renamed_name}" class="text-decoration-none fw-bold" download>${item.renamed_name}</a></td>
+                    <td>${item.merchant || '-'}</td>
+                    <td><code class="text-dark">${item.biz_no || '-'}</code></td> <td>${Number(item.amount).toLocaleString()}원</td>
+                    <td>${getTaxBadge(item.tax_type)}</td>
                     <td>
-                        <button class="btn btn-sm btn-primary" onclick="showPreview('/ocr_result/${item.renamed_name}')">보기</button>
+                        <div class="btn-group">
+                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                OCR 결과
+                            </button>
+                            <ul class="dropdown-menu shadow">
+                                <li><a class="dropdown-item" href="#" onclick="showPreview('/ocr_result/vis/${item.vis_name}')">미리보기</a></li>
+                                <li><a class="dropdown-item" href="/ocr_result/vis/${item.vis_name}" download>분석 이미지 다운로드</a></li>
+                            </ul>
+                        </div>
                     </td>
                 </tr>
             `;
-            resultTableBody.insertAdjacentHTML('beforeend', row);
+            tbody.insertAdjacentHTML('beforeend', row);
         });
     }
+    // Zip 다운로드 이벤트
+    document.getElementById('downloadOriginZip').onclick = () => location.href = '/api/download_all/origin';
+    document.getElementById('downloadVisZip').onclick = () => location.href = '/api/download_all/vis';
 
     // 4. 미리보기 모달
     function showPreview(url) {
@@ -207,24 +249,36 @@
     }
 
     // 5. CSV 다운로드
-    downloadCsv.addEventListener('click', () => {
-        let csvContent = "data:text/csv;charset=utf-8,\uFEFF"; // 한글 깨짐 방지 BOM
-        csvContent += "원본파일명,변환파일명,가맹점,사업자번호,결제일자,금액,과세유형\n";
-        
-        const rows = resultTableBody.querySelectorAll('tr');
-        rows.forEach(row => {
-            const cols = row.querySelectorAll('td');
-            const rowData = Array.from(cols).slice(0, 7).map(c => c.innerText.replace(/,/g, '')).join(",");
-            csvContent += rowData + "\n";
-        });
+    document.getElementById('downloadCsv').addEventListener('click', () => {
+        if (lastResultData.length === 0) return;
 
-        const encodedUri = encodeURI(csvContent);
+        // 헤더 정의
+        const headers = ["원본파일명", "변환파일명", "가맹점명", "사업자번호", "결제일자", "결제금액", "과세유형"];
+        
+        // 데이터 행 생성 (쉼표가 데이터에 있을 경우를 대비해 큰따옴표로 감싸기)
+        const rows = lastResultData.map(item => [
+            `"${item.original_name}"`,
+            `"${item.renamed_name}"`,
+            `"${item.merchant || ''}"`,
+            `"${item.biz_no || ''}"`,
+            `"${item.pay_date || ''}"`,
+            item.amount,
+            `"${item.tax_type}"`
+        ].join(","));
+
+        const csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
         const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "receipt_summary.csv");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `영수증_추출결과_${new Date().getTime()}.csv`);
         document.body.appendChild(link);
         link.click();
+        document.body.removeChild(link);
     });
+
+
 </script>
 
 </body>
