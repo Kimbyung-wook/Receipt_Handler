@@ -147,12 +147,21 @@
 
     // 2. 서버 전송 및 OCR 처리
     document.getElementById('processBtn').addEventListener('click', async () => {
+        const res = await fetch('/api/usage');
+        const data = await res.json();
+        if (data.total > 1000) return alert('일 사용 한도를 초과했습니다. (1천 회 과세분류 조회)');
         if (uploadedFiles.length === 0) return alert('파일을 업로드하세요.');
         
         const processBtn = document.getElementById('processBtn');
         const sKeyValue = document.getElementById('serviceKey')?.value || "";
         processBtn.disabled = true;
 
+        // 1. 즉시 UI 초기화 (요구사항 1번)
+        processBtn.disabled = true;
+        document.getElementById('resultTableBody').innerHTML = ''; 
+        lastResultData = [];
+
+        // 완료 파일 갯수 초기화
         let completedCount = 0;
         const totalCount = uploadedFiles.length;
 
@@ -315,8 +324,17 @@
         const csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
+
+        var today = new Date()
+        var year = today.getFullYear();
+        var mon = ('0' + (today.getMonth() + 1)).slice(-2);
+        var day  = ('0' + today.getDate()).slice(-2);
+        var hour= ('0' + today.getHours()).slice(-2);
+        var min = ('0' + today.getMinutes()).slice(-2);
+        var sec = ('0' + today.getSeconds()).slice(-2);
+        var dateString = year + mon  + day + "_" + hour + min + sec;
         link.href = URL.createObjectURL(blob);
-        link.download = `영수증_추출결과_${new Date().getTime()}.csv`;
+        link.download = `영수증_추출결과_${dateString}.csv`;
         link.click();
     });
     // 페이지 로드 시 실행

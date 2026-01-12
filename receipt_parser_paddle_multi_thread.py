@@ -463,16 +463,7 @@ def process_image(path):
             "pay_date": pay_date,
             "payment_amount": payment_amount,
             "tax_type": tax_type,
-            # "ocr_result": result,
         }
-
-    # except Exception as e:
-    #     print("❌ process_file error:", path, e)
-    #     return {
-    #         "path": path,
-    #         "fname": os.path.basename(path),
-    #         "error": str(e)
-    #     }
 
 
 # ===============================
@@ -485,9 +476,6 @@ def main():
         # if f.lower().endswith((".jpg", ".png", ".jpeg", ".pdf"))
         if f.lower().endswith((".jpg", ".png", ".jpeg", ".pdf"))
     ]
-    # print("INPUT_DIR =", INPUT_DIR)
-    # print("files =", os.listdir(INPUT_DIR))
-    # print("targets =", file_paths)
 
     results = []
 

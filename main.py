@@ -63,6 +63,12 @@ async def upload_files(request: Request, files: List[UploadFile] = File(...), us
     r_dir = get_user_path(RESULT_DIR, request)
     v_dir = get_user_path(OCR_VIS_DIR, request)
     
+    # 1. 요청 직후 해당 유저의 결과 폴더 초기화 (요구사항 1번)
+    for folder in [r_dir, v_dir]:
+        if os.path.exists(folder):
+            shutil.rmtree(folder)
+        os.makedirs(folder, exist_ok=True)
+
     active_key = user_key if user_key else config['ocr']['default_service_key']
 
     file_tasks = []
