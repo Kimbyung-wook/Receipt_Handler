@@ -1,0 +1,6 @@
+uploads
+test_images
+ocr_result
+usage_log.json
+__pycache__
+.vscode
