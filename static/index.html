@@ -139,6 +139,10 @@
         uploadedFiles.splice(idx, 1);
         renderFileList();
     }
+    
+
+    // 전역으로 선언
+    let currentN = 0;
 
     // 2. 서버 전송 및 OCR 처리
     document.getElementById('processBtn').addEventListener('click', async () => {
@@ -149,7 +153,7 @@
         
         processBtn.disabled = true;
         let dotCount = 1;
-        let currentN = 0;
+        currentN = 0;
         const totalM = uploadedFiles.length;
 
         // 점 애니메이션 및 진행률 표시 타이머
@@ -167,7 +171,7 @@
         formData.append('user_key', sKeyValue);
 
         try {
-            const response = await fetch('/api/upload', { method: 'POST', body: formData });
+            const response = await fetch('/api/upload_files', { method: 'POST', body: formData });
             const result = await response.json();
             if (result.status === 'success') {
                 processBtn.innerText = `처리 완료 (${totalM}/${totalM})`;
@@ -186,7 +190,7 @@
         document.getElementById('downloadCsv').disabled = false;
         alert("✅ 모든 영수증 처리가 완료되었습니다!");
     });
-    
+
     // 1. 과세분류별 배지 스타일 지정 함수 (연한 색상 적용)
     function getTaxBadge(taxType) {
         let bgClass = "";
@@ -201,6 +205,80 @@
 
     // 2. 결과 테이블 업데이트 (사업자번호 추가)
     let lastResultData = []; // CSV 저장을 위해 최신 데이터를 전역으로 관리
+
+    // 인터넷 연결 상태 확인 함수
+    function checkOnline() {
+        return navigator.onLine;
+    }
+
+    // 테이블에 실시간으로 행을 추가하는 함수
+    function addResultRow(item) {
+        const tbody = document.getElementById('resultTableBody');
+        const tr = document.createElement('tr');
+        
+        // 과세유형이 "오류"인 경우 재시도 버튼 포함
+        let taxContent = item.tax_type;
+        if (item.tax_type === "오류") {
+            taxContent = `
+                <span class="text-danger me-2">오류</span>
+                <button class="btn btn-sm btn-outline-warning" onclick="retryTax('${item.biz_no}', this)">
+                    과세분류 재조회
+                </button>
+            `;
+        } else {
+            taxContent = `<span class="badge bg-info">${item.tax_type}</span>`;
+        }
+
+        tr.innerHTML = `
+            <td>${item.original_name}</td>
+            <td><a href="#" onclick="showPreview('/ocr_result/${item.renamed_name}')">${item.renamed_name}</a></td>
+            <td>${item.merchant || '-'}</td>
+            <td>${item.biz_no || '-'}</td>
+            <td>${item.pay_date || '-'}</td>
+            <td>${Number(item.amount).toLocaleString()}원</td>
+            <td class="tax-type-cell">${taxContent}</td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    // 과세분류 재조회 함수 (인터넷 연결 체크 포함)
+    async function retryTaxQuery(bizNo, btnElement) {
+        if (!checkOnline()) {
+            alert("인터넷 연결이 끊겨 있습니다. 네트워크 상태를 확인 후 다시 시도해주세요.");
+            return;
+        }
+
+        if (!bizNo || bizNo === "000-00-00000") {
+            alert("사업자 번호가 올바르지 않아 재조회할 수 없습니다.");
+            return;
+        }
+
+        const sKeyValue = document.getElementById('serviceKey')?.value || "";
+        btnElement.disabled = true;
+        btnElement.innerText = "조회 중...";
+
+        try {
+            const response = await fetch(`/api/retry_tax?biz_no=${bizNo}&user_key=${sKeyValue}`);
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                const parentCell = btnElement.parentElement;
+                parentCell.innerHTML = `<span class="text-success">${result.tax_type}</span>`;
+                
+                // 전역 데이터 업데이트 (CSV 다운로드용)
+                const dataIndex = lastResultData.findIndex(d => d.biz_no === bizNo);
+                if (dataIndex > -1) lastResultData[dataIndex].tax_type = result.tax_type;
+            } else {
+                alert(`조회 실패: ${result.message}`);
+                btnElement.disabled = false;
+                btnElement.innerText = "재조회";
+            }
+        } catch (err) {
+            alert("서버 통신 중 오류가 발생했습니다.");
+            btnElement.disabled = false;
+            btnElement.innerText = "재조회";
+        }
+    }
 
     // 3. 결과 표 업데이트
     function updateTable(data) {

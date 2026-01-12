@@ -55,8 +55,8 @@ async def get_my_ip(request: Request):
     return {"ip": request.client.host}
 
 # FastAPI 엔드포인트 수정
-@app.post("/api/upload")
-async def upload_receipts(request: Request, files: List[UploadFile] = File(...), user_key: Optional[str] = Form(None)):
+@app.post("/api/upload_files")
+async def upload_files(request: Request, files: List[UploadFile] = File(...), user_key: Optional[str] = Form(None)):
     client_ip = request.client.host
     # 유저별 격리된 경로 설정
     u_dir = get_user_path(UPLOAD_DIR, request)
@@ -111,7 +111,7 @@ async def download_all(type: str, request: Request):
                 zf.write(file_path, filename)
     memory_file.seek(0)
     return StreamingResponse(memory_file, media_type="application/zip", 
-                             headers={"Content-Disposition": f"attachment; filename=receipts_{client_ip}.zip"})
+                             headers={"Content-Disposition": f"attachment; filename=receipts_{client_ip}_{type}.zip"})
 
 # 헬퍼 함수: IP별 독립 경로 생성
 def get_user_path(base_dir, request: Request):

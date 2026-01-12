@@ -5,11 +5,43 @@ from receipt_parser_paddle_multi_thread import (
     extract_text_from_paddle, get_ocr_lines, extract_biz_number, 
     extract_merchant_name, extract_payment_date_with_keyword, 
     extract_payment_date_without_keyword, extract_payment_amount, 
-    resize_for_ocr, get_tax_type_from_nts, normalize_tax_type,
+    resize_for_ocr, normalize_tax_type,
     draw_bb_on_img, get_img_arr_from_file_name
 )
 
+
+
+# ===============================
+# 4. 국세청 과세유형 조회
+# ===============================
+import requests
 from user_log import log_api_call
+def get_tax_type_from_nts_with_api_call_counter(client_ip, biz_no, service_key):
+    if not biz_no:
+        print("Biz_no is not exist")
+        return "오류"
+
+    url = "https://api.odcloud.kr/api/nts-businessman/v1/status"
+    payload = {"b_no": [biz_no.replace("-", "")]}
+    headers = {"Content-Type" : "application/json",
+               "accept" : "application/json"}
+
+    params = {"serviceKey": service_key}
+
+    for i in range(3):
+        # if True:
+        try:
+            r = requests.post(url, json=payload, headers=headers, params=params, timeout=10)
+            data = r.json()
+
+            info = data["data"][0]
+            log_api_call(client_ip)
+            return info.get("tax_type", "UNKNOWN")
+    
+        except Exception as e:
+            print("Failed to get TaxType from Biz_no : ", biz_no)
+            print(e)
+            return "오류"
 
 # 2. 개별 파일을 처리할 독립적인 워커 함수
 # 이 함수는 별도의 프로세스에서 실행되므로 전역 변수에 접근이 어렵습니다.
@@ -59,9 +91,7 @@ def worker_process_receipt(file_info, client_ip, active_key, upload_dir, result_
         # API 호출 및 로그 기록
         tax_type = "오류"
         if biz_no and active_key:
-            tax_type = get_tax_type_from_nts(biz_no, active_key)
-            if(tax_type is not "오류"):
-                log_api_call(client_ip)
+            tax_type = get_tax_type_from_nts_with_api_call_counter(client_ip, biz_no, active_key)
             tax_type = normalize_tax_type(tax_type)
 
         # 파일명 변경 규칙 적용

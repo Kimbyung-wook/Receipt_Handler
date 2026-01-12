@@ -330,8 +330,6 @@ def extract_payment_amount(lines):
 # 4. 국세청 과세유형 조회
 # ===============================
 def get_tax_type_from_nts(biz_no, service_key):
-    # print("get_tax_type_from_nts biz_no : ", biz_no)
-    # print("type biz_no : ", type(biz_no))
     if not biz_no:
         print("Biz_no is not exist")
         return "오류"
@@ -355,10 +353,6 @@ def get_tax_type_from_nts(biz_no, service_key):
         except Exception as e:
             print("Failed to get TaxType from Biz_no : ", biz_no)
             print(e)
-            return "오류"
-        
-        if(i == 3):
-            print("Finally Failed to get TaxType from Biz_no : ", biz_no)
             return "오류"
         
 
