@@ -28,7 +28,7 @@ os.environ["MKL_NUM_THREADS"] = "4"
 # OUTPUT_DIR = "./renamed_1"
 # OCR_RESULT_DIR = "./ocr_result_1"
 
-INPUT_DIR = "./original_receipt"
+INPUT_DIR = "./test_images"
 OUTPUT_DIR = "./renamed"
 OCR_RESULT_DIR = "./ocr_result"
 CSV_PATH = "./receipt_result.csv"
@@ -50,40 +50,61 @@ os.makedirs(OCR_RESULT_DIR, exist_ok=True)
 #     show_log=False,
 # )
 
-def draw_bb_on_img(img_path, result):
-    # PIL Image 변환
-    image_pil = Image.fromarray(result['doc_preprocessor_res']['output_img'])
+import platform
+
+def get_system_font(font_size=20):
+    os_name = platform.system()
+    
+    # OS별 기본 폰트 경로 후보
+    if os_name == "Windows":
+        # 윈도우: 맑은 고딕
+        font_path = "C:/Windows/Fonts/malgun.ttf"
+    elif os_name == "Linux":
+        # 리눅스(Ubuntu 등): 나눔고딕 또는 백묵 폰트
+        # 경로 예시: /usr/share/fonts/truetype/nanum/NanumGothic.ttf
+        candidates = [
+            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/nanum/NanumGothic.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf" # 최후의 수단
+        ]
+        font_path = next((p for p in candidates if os.path.exists(p)), None)
+    elif os_name == "Darwin":
+        # macOS: 애플 고딕
+        font_path = "/System/Library/Fonts/Supplemental/AppleGothic.ttf"
+    else:
+        font_path = None
+
+    # 폰트 로드 시도
+    try:
+        if font_path and os.path.exists(font_path):
+            return ImageFont.truetype(font_path, font_size)
+        else:
+            # 폰트 파일이 없으면 기본 폰트 반환
+            return ImageFont.load_default()
+    except Exception:
+        return ImageFont.load_default()
+    
+def draw_bb_on_img(img_arr, result):
+    image_pil = Image.fromarray(img_arr)
     draw = ImageDraw.Draw(image_pil)
 
-    # 한글 폰트 설정 (Windows 및 Mac/Linux 경로 다름)
-    font_path = "malgun.ttf"  # 윈도우: 'malgun.ttf', 맥: 'AppleGothic.ttf', 리눅스: '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
-    font = ImageFont.truetype(font_path, 12)  # 폰트 크기 설정
+    font = get_system_font(20)
 
     # Bounding Box 및 텍스트 표시
-    # pprint.pprint(result)
-    # print(np.shape(result['rec_boxes']))
-    # print(np.shape(result['rec_boxes'])[0])
     for i in range(np.shape(result['rec_boxes'])[0]):
-    # for line in result:
-    #     for word_info in line:
-            # bbox = np.array(word_info[0], dtype=np.int32)
-            bbox  = result['dt_polys'][i]
-            text  = result['rec_texts'][i]
-            score = result['rec_scores'][i]
+        bbox  = result['dt_polys'][i]
+        text  = result['rec_texts'][i]
+        score = result['rec_scores'][i]
 
-            # OpenCV로 Bounding Box 그리기
-            draw.polygon([tuple(point) for point in bbox], outline="red", width=3)
+        # OpenCV로 Bounding Box 그리기
+        draw.polygon([tuple(point) for point in bbox], outline="red", width=3)
 
-            # PIL을 사용한 한글 텍스트 출력
-            x, y = bbox[0]
-            draw.text((x, y - 10), text, font=font, fill=(0, 255, 0))  # 초록색 텍스트
+        # PIL을 사용한 한글 텍스트 출력
+        x, y = bbox[0]
+        draw.text((x, y - 10), text, font=font, fill=(0, 255, 0))  # 초록색 텍스트
 
-    # # 결과 이미지 출력
-    # image_pil.show()
-    # filename = os.path.basename(img_path)[:-4]
-    # 저장 (필요 시)
-    # image_pil.save(OCR_RESULT_DIR + '/' + filename + '.jpg')
     return image_pil
+    # image_pil.save(save_path)
 
 # OCR 결과를 줄 대로 받는다.
 def get_ocr_lines(result):
@@ -139,18 +160,19 @@ def ocr_image(image_path):
     img_ori = Image.open(image_path).convert("RGB")
     img_arr = np.array(img_ori)
     img_arr = resize_for_ocr(img_arr)
+    return img_arr
 
-    ocr_engine = PaddleOCR(
-        lang="korean",
-        use_doc_orientation_classify=False,
-        use_textline_orientation=False,
-        # use_angle_cls=False,
-        use_doc_unwarping=False,
-    )
-    result = ocr_engine.ocr(img_arr)
-    result = result[0]
+    # ocr_engine = PaddleOCR(
+    #     lang="korean",
+    #     use_doc_orientation_classify=False,
+    #     use_textline_orientation=False,
+    #     # use_angle_cls=False,
+    #     use_doc_unwarping=False,
+    # )
+    # result = ocr_engine.ocr(img_arr)
+    # result = result[0]
 
-    return result
+    # return result
 
 def ocr_image_from_pdf(pdf_path):
     pages = convert_from_path(pdf_path, dpi=300)
@@ -159,18 +181,19 @@ def ocr_image_from_pdf(pdf_path):
         raise ValueError("PDF 변환 실패")
     img_arr = np.array(img_pil)
     img_arr = resize_for_ocr(img_arr)
+    return img_arr
 
-    ocr_engine = PaddleOCR(
-        lang="korean",
-        use_doc_orientation_classify=False,
-        use_textline_orientation=False,
-        # use_angle_cls=False,
-        use_doc_unwarping=False,
-    )
-    result = ocr_engine.ocr(img_arr)
-    result = result[0]
+    # ocr_engine = PaddleOCR(
+    #     lang="korean",
+    #     use_doc_orientation_classify=False,
+    #     use_textline_orientation=False,
+    #     # use_angle_cls=False,
+    #     use_doc_unwarping=False,
+    # )
+    # result = ocr_engine.ocr(img_arr)
+    # result = result[0]
 
-    return result
+    # return result, img_arr
 
 # ===============================
 # 3. 정보 추출 함수들
@@ -321,15 +344,18 @@ def get_tax_type_from_nts(biz_no, service_key):
     params = {"serviceKey": service_key}
 
     for i in range(3):
+        # if True:
         try:
             r = requests.post(url, json=payload, headers=headers, params=params, timeout=10)
             data = r.json()
 
             info = data["data"][0]
-            return info.get("tax_type", "오류")
-
-        except Exception:
+            return info.get("tax_type", "UNKNOWN")
+    
+        except Exception as e:
             print("Failed to get TaxType from Biz_no : ", biz_no)
+            print(e)
+            return "오류"
         
         if(i == 3):
             print("Finally Failed to get TaxType from Biz_no : ", biz_no)
@@ -338,6 +364,9 @@ def get_tax_type_from_nts(biz_no, service_key):
 
 
 def normalize_tax_type(tax_type):
+    
+    if tax_type is None:
+        return "NONE"
     if "일반" in tax_type:
         return "일반"
     if "간이" in tax_type:
@@ -361,20 +390,50 @@ def copy_and_rename(src, date, tax_type, merchant, payment_amount):
     shutil.copy2(src, dst)
     return new_name
 
+def get_img_arr_from_file_name(file_full_path):
+    ext = os.path.splitext(file_full_path)[1].lower()
+    if (ext.lower() == ".pdf"):
+        pages = convert_from_path(file_full_path, dpi=300)
+        img_pil = pages[0] if pages else None
+        if img_pil is None:
+            raise ValueError("PDF 변환 실패")
+        img_arr = np.array(img_pil)
+        img_arr = resize_for_ocr(img_arr)
+
+    elif (ext.lower() == ".jpg"  or
+        ext.lower() == ".png"  or
+        ext.lower() == ".jpeg"   ):
+        img_ori = Image.open(file_full_path).convert("RGB")
+        img_arr = np.array(img_ori)
+    else:
+        raise ValueError("확장자 오류")
+    
+    return img_arr
+
 def process_image(path):
     print("▶ process_file start:", path)
     ext = os.path.splitext(path)[1].lower()
-    try:
-
+    if True:
+    # try:
         if (ext.lower() == ".pdf"):
-            result = ocr_image_from_pdf(path)
+            img_arr = ocr_image_from_pdf(path)
 
         elif (ext.lower() == ".jpg"  or
               ext.lower() == ".png"  or
               ext.lower() == ".jpeg"   ):
-            result = ocr_image(path)
+            img_arr = ocr_image(path)
         else:
             raise ValueError("확장자 오류")
+        
+        ocr_engine = PaddleOCR(
+            lang="korean",
+            use_doc_orientation_classify=False,
+            use_textline_orientation=False,
+            # use_angle_cls=False,
+            use_doc_unwarping=False,
+        )
+        result = ocr_engine.ocr(img_arr)
+        result = result[0]
 
         text = extract_text_from_paddle(result)
         textline = get_ocr_lines(result)
@@ -398,7 +457,8 @@ def process_image(path):
             merchant,
             payment_amount
         )
-        image_pil = draw_bb_on_img(path, result)
+
+        image_pil = draw_bb_on_img(img_arr, result)
         image_pil.save(os.path.join(OCR_RESULT_DIR, new_file))
 
         return {
@@ -412,13 +472,13 @@ def process_image(path):
             # "ocr_result": result,
         }
 
-    except Exception as e:
-        print("❌ process_file error:", path, e)
-        return {
-            "path": path,
-            "fname": os.path.basename(path),
-            "error": str(e)
-        }
+    # except Exception as e:
+    #     print("❌ process_file error:", path, e)
+    #     return {
+    #         "path": path,
+    #         "fname": os.path.basename(path),
+    #         "error": str(e)
+    #     }
 
 
 # ===============================
@@ -463,10 +523,6 @@ def main():
             r["merchant"],
             r["payment_amount"]
         )
-
-        # # BB 이미지 저장
-        # image_pil = draw_bb_on_img(r["path"], r["ocr_result"])
-        # image_pil.save(os.path.join(OCR_RESULT_DIR, new_file))
 
         rows.append([
             r["fname"],
