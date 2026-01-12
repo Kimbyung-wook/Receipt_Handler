@@ -392,7 +392,6 @@ def get_img_arr_from_file_name(file_full_path):
         if img_pil is None:
             raise ValueError("PDF 변환 실패")
         img_arr = np.array(img_pil)
-        img_arr = resize_for_ocr(img_arr)
 
     elif (ext.lower() == ".jpg"  or
         ext.lower() == ".png"  or
@@ -402,6 +401,7 @@ def get_img_arr_from_file_name(file_full_path):
     else:
         raise ValueError("확장자 오류")
     
+    img_arr = resize_for_ocr(img_arr)
     return img_arr
 
 def process_image(path):

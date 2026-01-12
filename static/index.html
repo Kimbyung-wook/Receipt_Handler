@@ -19,7 +19,7 @@
 
 <div class="container">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>🧾 영수증 OCR 시스템</h2>
+        <h2>🧾 영수증 정보 추출기 (새로고침 시 파일 자동 삭제)</h2>
         <div class="alert alert-warning mb-0 py-2">
             오늘 전체 API 호출: <strong id="todayTotal">0</strong> / 1,000
         </div>
@@ -64,11 +64,12 @@
         <table class="table table-hover align-middle">
             <thead class="table-light">
                 <tr>
-                    <th>원본파일명</th>
-                    <th>변환파일명<br>(클릭시 다운)</th>
-                    <th>가맹점</th>
+                    <th>원본파일명<br>(클릭 시 열기)</th>
+                    <th>변환파일명<br>(클릭 시 다운)</th>
+                    <th>가맹점명</th>
                     <th>사업자등록번호</th>
-                    <th>금액</th>
+                    <th>결제일자</th>
+                    <th>결제금액</th>
                     <th>과세유형</th>
                     <th>작업</th>
                 </tr>
@@ -150,45 +151,52 @@
         
         const processBtn = document.getElementById('processBtn');
         const sKeyValue = document.getElementById('serviceKey')?.value || "";
-        
         processBtn.disabled = true;
-        let dotCount = 1;
-        currentN = 0;
-        const totalM = uploadedFiles.length;
 
-        // 점 애니메이션 및 진행률 표시 타이머
-        const loadingInterval = setInterval(() => {
-            const dots = '.'.repeat(dotCount);
-            processBtn.innerText = `처리중 (${currentN}/${totalM}) ${dots}`;
-            dotCount = (dotCount >= 6) ? 1 : dotCount + 1;
-        }, 400);
+        let completedCount = 0;
+        const totalCount = uploadedFiles.length;
 
-        // [핵심] 모든 파일을 하나의 FormData에 담아 한 번에 전송
         const formData = new FormData();
-        for (const file of uploadedFiles) {
-            formData.append('files', file);
-        }
+        uploadedFiles.forEach(file => formData.append('files', file));
         formData.append('user_key', sKeyValue);
 
         try {
             const response = await fetch('/api/upload_files', { method: 'POST', body: formData });
-            const result = await response.json();
-            if (result.status === 'success') {
-                processBtn.innerText = `처리 완료 (${totalM}/${totalM})`;
-                updateTable(result.data);
-                lastResultData = result.data;
-                document.getElementById('downloadCsv').disabled = false;
-            }
-        } catch (err) {
-            console.error(err);
-        }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
 
-        clearInterval(loadingInterval);
-        processBtn.disabled = false;
-        processBtn.innerText = 'OCR 처리 시작';
-        
-        document.getElementById('downloadCsv').disabled = false;
-        alert("✅ 모든 영수증 처리가 완료되었습니다!");
+            // 누르자마자 표시되는 문구
+            processBtn.innerText = `처리 중 (${completedCount}/${totalCount}) ...`;
+            // 스트림 읽기 시작
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split("\n").filter(line => line.trim());
+
+                lines.forEach(line => {
+                    const result = JSON.parse(line);
+                    completedCount++;
+                    
+                    // 갱신되면 바뀌는 실시간 진행률 (N/M)
+                    processBtn.innerText = `처리 중 (${completedCount}/${totalCount}) ...`;
+
+                    if (result.status === 'success') {
+                        addResultRow(result.data);
+                        lastResultData.push(result.data);
+                    }
+                });
+            }
+            updateUsage(); 
+            alert("✅ 모든 영수증 처리가 완료되었습니다!");
+        } catch (err) {
+            console.error("에러 발생:", err);
+        } finally {
+            processBtn.innerText = 'OCR 처리 시작';
+            processBtn.disabled = false;
+            document.getElementById('downloadCsv').disabled = false;
+        }
     });
 
     // 1. 과세분류별 배지 스타일 지정 함수 (연한 색상 적용)
@@ -200,7 +208,9 @@
             case '면세': bgClass = "bg-info-subtle text-info border border-info-subtle"; break; // 연한 푸른
             default: bgClass = "bg-danger-subtle text-danger border border-danger-subtle"; // 연한 붉은 (불명/미확인)
         }
-        return `<span class="badge ${bgClass}" style="font-weight: 500;">${taxType}</span>`;
+        return `
+                <span class="badge ${bgClass}" style="font-weight: 500;">${taxType}</span>
+                `;
     }
 
     // 2. 결과 테이블 업데이트 (사업자번호 추가)
@@ -212,104 +222,67 @@
     }
 
     // 테이블에 실시간으로 행을 추가하는 함수
-    function addResultRow(item) {
+    async function addResultRow(item) {
         const tbody = document.getElementById('resultTableBody');
         const tr = document.createElement('tr');
         
         // 과세유형이 "오류"인 경우 재시도 버튼 포함
-        let taxContent = item.tax_type;
+        // let taxContent = item.tax_type;
+        let taxContent = getTaxBadge(item.tax_type);
         if (item.tax_type === "오류") {
-            taxContent = `
-                <span class="text-danger me-2">오류</span>
+            taxContent += `
                 <button class="btn btn-sm btn-outline-warning" onclick="retryTax('${item.biz_no}', this)">
                     과세분류 재조회
                 </button>
             `;
-        } else {
-            taxContent = `<span class="badge bg-info">${item.tax_type}</span>`;
         }
+        const res = await fetch('/api/my_ip');
+        const data = await res.json();
 
         tr.innerHTML = `
-            <td>${item.original_name}</td>
-            <td><a href="#" onclick="showPreview('/ocr_result/${item.renamed_name}')">${item.renamed_name}</a></td>
+            <td><a href="#" onclick="showPreview('/ocr_result/${data.ip}/${item.renamed_name}')">${item.original_name}</a></td>
+            <td><a href="/ocr_result/${data.ip}/${item.renamed_name}" class="text-decoration-none fw-bold" download>${item.renamed_name}</a></td>
             <td>${item.merchant || '-'}</td>
             <td>${item.biz_no || '-'}</td>
             <td>${item.pay_date || '-'}</td>
             <td>${Number(item.amount).toLocaleString()}원</td>
             <td class="tax-type-cell">${taxContent}</td>
+            <td>
+                <div class="btn-group">
+                    <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        OCR 결과
+                    </button>
+                    <ul class="dropdown-menu shadow">
+                        <li><a class="dropdown-item" href="#" onclick="showPreview('/ocr_result/vis/${data.ip}/${item.vis_name}')">미리보기</a></li>
+                        <li><a class="dropdown-item" href="/ocr_result/vis/${data.ip}/${item.vis_name}" download>분석 이미지 다운로드</a></li>
+                    </ul>
+                </div>
+            </td>
         `;
         tbody.appendChild(tr);
     }
 
-    // 과세분류 재조회 함수 (인터넷 연결 체크 포함)
-    async function retryTaxQuery(bizNo, btnElement) {
-        if (!checkOnline()) {
-            alert("인터넷 연결이 끊겨 있습니다. 네트워크 상태를 확인 후 다시 시도해주세요.");
-            return;
-        }
-
-        if (!bizNo || bizNo === "000-00-00000") {
-            alert("사업자 번호가 올바르지 않아 재조회할 수 없습니다.");
-            return;
-        }
-
+    // 재조회 함수 (인터넷 체크 포함)
+    async function retryTax(bizNo, btn) {
+        if (!navigator.onLine) return alert("인터넷 연결이 원활하지 않습니다.");
+        
+        btn.disabled = true;
+        btn.innerText = "조회중";
         const sKeyValue = document.getElementById('serviceKey')?.value || "";
-        btnElement.disabled = true;
-        btnElement.innerText = "조회 중...";
 
         try {
-            const response = await fetch(`/api/retry_tax?biz_no=${bizNo}&user_key=${sKeyValue}`);
-            const result = await response.json();
-
-            if (result.status === 'success') {
-                const parentCell = btnElement.parentElement;
-                parentCell.innerHTML = `<span class="text-success">${result.tax_type}</span>`;
-                
-                // 전역 데이터 업데이트 (CSV 다운로드용)
-                const dataIndex = lastResultData.findIndex(d => d.biz_no === bizNo);
-                if (dataIndex > -1) lastResultData[dataIndex].tax_type = result.tax_type;
+            const res = await fetch(`/api/retry_tax?biz_no=${bizNo}&user_key=${sKeyValue}`);
+            const data = await res.json();
+            if (data.status === 'success') {
+                btn.parentElement.innerHTML = `<span class="badge bg-success">${data.tax_type}</span>`;
             } else {
-                alert(`조회 실패: ${result.message}`);
-                btnElement.disabled = false;
-                btnElement.innerText = "재조회";
+                alert("재조회 실패: " + data.message);
+                btn.disabled = false;
+                btn.innerText = "재조회";
             }
-        } catch (err) {
-            alert("서버 통신 중 오류가 발생했습니다.");
-            btnElement.disabled = false;
-            btnElement.innerText = "재조회";
-        }
+        } catch (e) { alert("서버 통신 오류"); }
     }
 
-    // 3. 결과 표 업데이트
-    function updateTable(data) {
-        lastResultData = data; // 데이터 보관
-        const tbody = document.getElementById('resultTableBody');
-        tbody.innerHTML = '';
-        
-        data.forEach(item => {
-            const row = `
-                <tr>
-                    <td><small class="text-muted">${item.original_name}</small></td>
-                    <td><a href="/ocr_result/${item.renamed_name}" class="text-decoration-none fw-bold" download>${item.renamed_name}</a></td>
-                    <td>${item.merchant || '-'}</td>
-                    <td><code class="text-dark">${item.biz_no || '-'}</code></td> <td>${Number(item.amount).toLocaleString()}원</td>
-                    <td>${getTaxBadge(item.tax_type)}</td>
-                    <td>
-                        <div class="btn-group">
-                            <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
-                                OCR 결과
-                            </button>
-                            <ul class="dropdown-menu shadow">
-                                <li><a class="dropdown-item" href="#" onclick="showPreview('/ocr_result/vis/${item.vis_name}')">미리보기</a></li>
-                                <li><a class="dropdown-item" href="/ocr_result/vis/${item.vis_name}" download>분석 이미지 다운로드</a></li>
-                            </ul>
-                        </div>
-                    </td>
-                </tr>
-            `;
-            tbody.insertAdjacentHTML('beforeend', row);
-        });
-    }
     // Zip 다운로드 이벤트
     document.getElementById('downloadOriginZip').onclick = () => location.href = '/api/download_all/origin';
     document.getElementById('downloadVisZip').onclick = () => location.href = '/api/download_all/vis';
@@ -322,10 +295,11 @@
 
     // 5. CSV 다운로드 (데이터 정합성 강화)
     document.getElementById('downloadCsv').addEventListener('click', () => {
-        if (lastResultData.length === 0) return;
+        console.log("DownloadCSV");
+        if (lastResultData.length === 0) return alert('OCR 인식한 내역이 없어요.');
 
         // 헤더 생성
-        const headers = ["원본파일명", "변환파일명", "가맹점명", "사업자번호", "결제일자", "결제금액", "과세유형"];
+        const headers = ["원본파일명", "변환파일명", "가맹점명", "사업자등록번호", "결제일자", "결제금액", "과세유형"];
         
         // 데이터 행 별 입력
         const rows = lastResultData.map(item => [
@@ -357,18 +331,6 @@
             document.querySelector('.container').prepend(infoBar);
         } catch (e) { console.log("IP 정보를 가져올 수 없습니다."); }
     };
-
-    // 1번 요구사항 보완: 이미지 미리보기 경로 수정
-    function showPreview(url, renamed_name) {
-        // 서버에서 /ocr_result/IP/파일명 형태로 접근해야 함을 고려
-        // main.py의 StaticFiles 설정에 맞춰 유연하게 대응 필요
-        // 현재 main.py에서 RESULT_DIR을 통째로 마운트했다면 경로에 IP가 포함되어야 함
-        document.getElementById('modalImg').src = url;
-        new bootstrap.Modal(document.getElementById('previewModal')).show();
-    }
-
-    // 기존 updateTable 함수 내 보기 버튼 생성 부분 수정 (IP 경로 포함)
-    // item.vis_url 등을 서버에서 내려주도록 하거나 프론트에서 IP를 붙여 생성
 
 </script>
 

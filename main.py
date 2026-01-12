@@ -34,17 +34,17 @@ os.makedirs(OCR_VIS_DIR, exist_ok=True)
 
 # 1. 글로벌 프로세스 풀 생성 (CPU 코어 수에 맞춰 설정)
 # 서버 시작 시 한 번만 생성됩니다.
-executor = ProcessPoolExecutor(max_workers=os.cpu_count() // 2)
+# executor = ProcessPoolExecutor(max_workers=os.cpu_count() // 2)
+executor = ProcessPoolExecutor(max_workers=2)
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 app.mount("/ocr_result", StaticFiles(directory=RESULT_DIR), name="ocr_result")
 
 # --- 5. API 엔드포인트 ---
 @app.get("/api/usage")
 async def get_today_usage():
-    print(datetime.today())
-    print(datetime.now())
     today = datetime.now().strftime("%Y-%m-%d")
     data = get_usage_data().get(today, {"total": 0})
     return {"total": data["total"]}
@@ -72,24 +72,27 @@ async def upload_files(request: Request, files: List[UploadFile] = File(...), us
         with open(temp_path, "wb") as f: f.write(content)
         file_tasks.append((temp_path, file.filename))
 
-    import asyncio
-    loop = asyncio.get_event_loop()
-    # 워커에 격리된 r_dir, v_dir 전달 (worker.py의 인자 순서 유지)
-    tasks = [
-        loop.run_in_executor(executor,
-                             worker_process_receipt,
-                             task,
-                             client_ip,
-                             active_key,
-                             u_dir, r_dir, v_dir)
-        for task in file_tasks
-    ]
-    
-    raw_results = await asyncio.gather(*tasks)
-    # status가 success인 데이터만 필터링
-    final_data = [r["data"] for r in raw_results]
-    
-    return {"status": "success", "data": final_data}
+    import asyncio, json
+    async def event_generator():
+        loop = asyncio.get_event_loop()
+        # 병렬 작업을 생성
+        tasks = [
+            loop.run_in_executor(executor,
+                                worker_process_receipt,
+                                task,
+                                client_ip,
+                                active_key,
+                                u_dir, r_dir, v_dir)
+            for task in file_tasks
+        ]
+
+        # [핵심] 병렬로 실행하되, 먼저 완료되는 순서대로 뽑아냄
+        for future in asyncio.as_completed(tasks):
+            result = await future
+            # 각 결과가 나올 때마다 JSON 형태로 스트리밍 전송
+            yield json.dumps(result) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 # 전체 다운로드 (Zip) 기능 추가
 # Zip 다운로드 시에도 유저 폴더만 압축하도록 수정
