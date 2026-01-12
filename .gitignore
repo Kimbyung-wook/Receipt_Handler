@@ -4,3 +4,6 @@ ocr_result
 usage_log.json
 __pycache__
 .vscode
+*.csv
+*.png
+*.pdf
