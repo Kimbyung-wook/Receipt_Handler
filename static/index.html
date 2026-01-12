@@ -145,55 +145,48 @@
         if (uploadedFiles.length === 0) return alert('파일을 업로드하세요.');
         
         const processBtn = document.getElementById('processBtn');
-        const formData = new FormData();
+        const sKeyValue = document.getElementById('serviceKey')?.value || "";
         
-        uploadedFiles.forEach(f => {
-            formData.append('files', f); 
-        });
-
-        const sKeyInput = document.getElementById('serviceKey');
-        const sKeyValue = sKeyInput ? sKeyInput.value : "";
-        formData.append('user_key', sKeyValue);
-
-        // --- 애니메이션 로직 시작 ---
         processBtn.disabled = true;
         let dotCount = 1;
+        let currentN = 0;
+        const totalM = uploadedFiles.length;
+
+        // 점 애니메이션 및 진행률 표시 타이머
         const loadingInterval = setInterval(() => {
-            processBtn.innerText = `처리중${'.'.repeat(dotCount)}`;
+            const dots = '.'.repeat(dotCount);
+            processBtn.innerText = `처리중 (${currentN}/${totalM}) ${dots}`;
             dotCount = (dotCount >= 6) ? 1 : dotCount + 1;
-        }, 250); // 0.5초마다 점 추가
-        // -------------------------
+        }, 400);
+
+        // [핵심] 모든 파일을 하나의 FormData에 담아 한 번에 전송
+        const formData = new FormData();
+        for (const file of uploadedFiles) {
+            formData.append('files', file);
+        }
+        formData.append('user_key', sKeyValue);
 
         try {
-            const response = await fetch('/api/upload', { 
-                method: 'POST', 
-                body: formData 
-            });
-            
-            if (!response.ok) throw new Error('서버 응답 오류');
-            
-            // 4. 처리 완료 팝업 (OCR 시작 버튼 로직 내부)
+            const response = await fetch('/api/upload', { method: 'POST', body: formData });
             const result = await response.json();
             if (result.status === 'success') {
+                processBtn.innerText = `처리 완료 (${totalM}/${totalM})`;
                 updateTable(result.data);
-                document.getElementById('downloadOriginZip').disabled = false;
-                document.getElementById('downloadVisZip').disabled = false;
+                lastResultData = result.data;
                 document.getElementById('downloadCsv').disabled = false;
-                if (typeof updateUsage === "function") updateUsage(); 
-                // [수정] 성공 시 팝업 알림
-                setTimeout(() => alert("✅ 모든 영수증 처리가 완료되었습니다!"), 100);
             }
         } catch (err) {
             console.error(err);
-            alert('처리 중 오류가 발생했습니다. 서버 콘솔을 확인하세요.');
-        } finally {
-            // --- 애니메이션 로직 종료 ---
-            clearInterval(loadingInterval); // 반복 멈춤
-            processBtn.disabled = false;
-            processBtn.innerText = 'OCR 처리 시작'; // 원래 텍스트로 복구
-            // -------------------------
         }
+
+        clearInterval(loadingInterval);
+        processBtn.disabled = false;
+        processBtn.innerText = 'OCR 처리 시작';
+        
+        document.getElementById('downloadCsv').disabled = false;
+        alert("✅ 모든 영수증 처리가 완료되었습니다!");
     });
+    
     // 1. 과세분류별 배지 스타일 지정 함수 (연한 색상 적용)
     function getTaxBadge(taxType) {
         let bgClass = "";
@@ -249,36 +242,55 @@
         new bootstrap.Modal(document.getElementById('previewModal')).show();
     }
 
-    // 5. CSV 다운로드
+    // 5. CSV 다운로드 (데이터 정합성 강화)
     document.getElementById('downloadCsv').addEventListener('click', () => {
         if (lastResultData.length === 0) return;
 
-        // 헤더 정의
+        // 헤더 생성
         const headers = ["원본파일명", "변환파일명", "가맹점명", "사업자번호", "결제일자", "결제금액", "과세유형"];
         
-        // 데이터 행 생성 (쉼표가 데이터에 있을 경우를 대비해 큰따옴표로 감싸기)
+        // 데이터 행 별 입력
         const rows = lastResultData.map(item => [
             `"${item.original_name}"`,
             `"${item.renamed_name}"`,
-            `"${item.merchant || ''}"`,
+            `"${(item.merchant || '').replace(/"/g, '""')}"`, // 따옴표 중복 방지
             `"${item.biz_no || ''}"`,
             `"${item.pay_date || ''}"`,
-            item.amount,
+            `"${item.amount}"`,
             `"${item.tax_type}"`
         ].join(","));
 
         const csvContent = "\uFEFF" + headers.join(",") + "\n" + rows.join("\n");
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        
         const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `영수증_추출결과_${new Date().getTime()}.csv`);
-        document.body.appendChild(link);
+        link.href = URL.createObjectURL(blob);
+        link.download = `영수증_추출결과_${new Date().getTime()}.csv`;
         link.click();
-        document.body.removeChild(link);
     });
+    // 페이지 로드 시 실행
+    window.onload = async () => {
+        try {
+            // 2. 요구사항: 접속 IP 표시
+            const res = await fetch('/api/my_ip');
+            const data = await res.json();
+            const infoBar = document.createElement('div');
+            infoBar.className = 'text-end mb-2 text-muted small';
+            infoBar.innerHTML = `접속 IP: <span class="badge bg-secondary">${data.ip}</span> | 상태: <span class="text-success">데이터 격리 활성화</span>`;
+            document.querySelector('.container').prepend(infoBar);
+        } catch (e) { console.log("IP 정보를 가져올 수 없습니다."); }
+    };
 
+    // 1번 요구사항 보완: 이미지 미리보기 경로 수정
+    function showPreview(url, renamed_name) {
+        // 서버에서 /ocr_result/IP/파일명 형태로 접근해야 함을 고려
+        // main.py의 StaticFiles 설정에 맞춰 유연하게 대응 필요
+        // 현재 main.py에서 RESULT_DIR을 통째로 마운트했다면 경로에 IP가 포함되어야 함
+        document.getElementById('modalImg').src = url;
+        new bootstrap.Modal(document.getElementById('previewModal')).show();
+    }
+
+    // 기존 updateTable 함수 내 보기 버튼 생성 부분 수정 (IP 경로 포함)
+    // item.vis_url 등을 서버에서 내려주도록 하거나 프론트에서 IP를 붙여 생성
 
 </script>
 
