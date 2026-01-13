@@ -153,13 +153,50 @@
     const downloadCsv = document.getElementById('downloadCsv');
     
     let uploadedFiles = [];
+    
+    // 중복 체크를 위한 셋(Set) 또는 비교 로직 추가
+    function handleFiles(files) {
+        const fileList = Array.from(files);
+        let duplicateCount = 0;
+
+        fileList.forEach(newFile => {
+            // 이름과 크기가 모두 같은 파일이 리스트에 있는지 확인
+            const isDuplicate = uploadedFiles.some(existingFile => 
+                existingFile.name === newFile.name && existingFile.size === newFile.size
+            );
+
+            if (!isDuplicate) {
+                uploadedFiles.push(newFile);
+            } else {
+                duplicateCount++;
+            }
+        });
+
+        if (duplicateCount > 0) {
+            alert(`${duplicateCount}개의 중복된 파일이 제외되었습니다.`);
+        }
+
+        renderFileList(); // 파일 목록 갱신
+    }
 
     // Change Event : 업로드된 파일 변경 시 파일 리스트 업데이트
-    fileInput.addEventListener('change', (e) => {
-        for(let file of e.target.files) {
-            uploadedFiles.push(file);
-        }
-        renderFileList();
+    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+    // 드롭존 및 파일 인풋 이벤트 연결
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.currentTarget.style.backgroundColor = "#f0f7ff";
+    });
+
+    dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.currentTarget.style.backgroundColor = "";
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.currentTarget.style.backgroundColor = "";
+        handleFiles(e.dataTransfer.files);
     });
 
     // Click Event : 업로드된 파일 전체 삭제
