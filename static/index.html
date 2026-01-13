@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>사내 영수증 OCR 관리 시스템</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
-        body { background-color: #f8f9fa; padding-top: 50px; }
-        .container { max-width: 1100px; background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .upload-zone { border: 2px dashed #dee2e6; padding: 40px; text-align: center; border-radius: 10px; cursor: pointer; transition: 0.3s; }
+        body { background-color: #f8f9fa; padding-top: 5px; }
+        .container { max-width: 1100px; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .upload-zone { border: 2px dashed #dee2e6; padding: 20px; text-align: center; border-radius: 10px; cursor: pointer; transition: 0.3s; }
         .upload-zone:hover { border-color: #0d6efd; background-color: #f0f7ff; }
         .preview-img { max-width: 100%; height: auto; border: 1px solid #ddd; }
         #fileList { margin-top: 20px; }
@@ -18,16 +19,18 @@
 <body>
 
 <div class="container mt-4">
+	 <!-- 제목 영역 -->
     <div class="text-center mb-4">
         <h2 class="fw-bold mb-3">🧾 영수증 정보 추출기</h2>
         <div class="mb-3">
             <span class="text-muted d-block">✨ 새로고침 시에 화면 초기화 및 파일 자동 삭제 수행</span>
-            <a href="여러분의_하이패스_링크" target="_blank" class="btn btn-link btn-sm text-primary text-decoration-none fw-bold">
-                하이패스 영수증 추출기로 가기 🔗
+            <a href="하이패스 링크" target="_blank" class="btn btn-link btn-sm text-primary text-decoration-none fw-bold">
+                <i class="bi bi-arrow-left"></i> 하이패스 영수증 추출기로 가기 🔗
             </a>
         </div>
     </div>
 
+	<!-- 개인 키 및 호출 횟수 표시 화면 -->
     <div class="card border-0 shadow-sm mb-4 bg-light">
         <div class="card-body py-3">
             <div class="row align-items-center">
@@ -54,10 +57,12 @@
         </div>
     </div>
     
-    <div class="upload-zone mb-3" id="dropZone">
-        <h5>파일을 드래그하거나 클릭하세요.</h5>
-        <input type="file" id="fileInput" multiple style="display: none;">
-        <button class="btn btn-primary btn-sm" onclick="document.getElementById('fileInput').click()">파일 선택</button>
+    <!-- 파일 업로드 및 파일 리스트 영역  -->
+    <div class="upload-zone" id="dropZone">
+        <input type="file" id="fileInput" multiple hidden accept="image/jpeg, image/png, image/jpg ,application/pdf">
+        <i class="bi bi-cloud-arrow-up-fill display-4 text-primary"></i>
+        <h5 class="mt-3 fw-bold">파일을 드래그하거나 클릭하여 추가하세요</h5>
+        <p class="text-muted small">중복된 파일은 자동으로 제외됩니다.</p>
     </div>
 
     <div class="d-flex justify-content-between align-items-center bg-light p-2 border rounded mb-2">
@@ -88,7 +93,7 @@
             <button id="downloadCsv" class="btn btn-dark btn-sm" disabled>CSV 다운로드</button>
         </div>
     </div>
-
+    
     <div class="table-responsive">
         <table class="table table-hover align-middle">
             <thead class="table-light">
@@ -124,6 +129,8 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    let uploadedFiles = [];
+    let lastResultData = []; // CSV 저장을 위해 최신 데이터를 전역으로 관리
 
     // 페이지 로드 시 호출 횟수 가져오기
     async function updateUsage() {
@@ -152,8 +159,6 @@
     const resultTableBody = document.getElementById('resultTableBody');
     const downloadCsv = document.getElementById('downloadCsv');
     
-    let uploadedFiles = [];
-    
     // 중복 체크를 위한 셋(Set) 또는 비교 로직 추가
     function handleFiles(files) {
         const fileList = Array.from(files);
@@ -178,27 +183,13 @@
 
         renderFileList(); // 파일 목록 갱신
     }
-
-    // Change Event : 업로드된 파일 변경 시 파일 리스트 업데이트
-    fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
-
-    // 드롭존 및 파일 인풋 이벤트 연결
-    dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.currentTarget.style.backgroundColor = "#f0f7ff";
-    });
-
-    dropZone.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        e.currentTarget.style.backgroundColor = "";
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.currentTarget.style.backgroundColor = "";
-        handleFiles(e.dataTransfer.files);
-    });
-
+    
+    // 업로드 존 이벤트
+    fileInput.onchange  = (e) => handleFiles(e.target.files);
+    dropZone.onclick    = () => document.getElementById('fileInput').click();
+    dropZone.ondragover = (e) => { e.preventDefault(); dropZone.style.borderColor = "#0052cc"; };
+    dropZone.ondrop     = (e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); };
+    
     // Click Event : 업로드된 파일 전체 삭제
     document.getElementById('clearAllBtn').addEventListener('click', () => {
         if (uploadedFiles.length === 0) return alert('삭제 할 파일이 없습니다.');
@@ -334,9 +325,6 @@
                 `;
     }
 
-    // 2. 결과 테이블 업데이트 (사업자번호 추가)
-    let lastResultData = []; // CSV 저장을 위해 최신 데이터를 전역으로 관리
-
     // 인터넷 연결 상태 확인 함수
     function checkOnline() {
         return navigator.onLine;
@@ -353,7 +341,7 @@
         if (item.tax_type === "오류") {
             taxContent += `
                 <button class="btn btn-sm btn-outline-warning" onclick="retryTax('${item.biz_no}', this)">
-                    과세분류 재조회
+                    재조회
                 </button>
             `;
         }
@@ -385,17 +373,21 @@
 
     // 재조회 함수 (인터넷 체크 포함)
     async function retryTax(bizNo, btn) {
-        if (!navigator.onLine) return alert("인터넷 연결이 원활하지 않습니다.");
+        if (!checkOnline()) return alert("인터넷 연결이 원활하지 않습니다.");
         
         btn.disabled = true;
         btn.innerText = "조회중";
-        const userKey = getUserKey();
+
+        const formData = new FormData();
+        // 국세청 API 키 업데이트
+        formData.append('user_key', getUserKey());
+        formData.append('biz_no', bizNo)
 
         try {
-            const res = await fetch(`/api/retry_tax?biz_no=${bizNo}&user_key=${userKey}`);
+            const res = await fetch(`/api/retry_tax`, { method: 'POST', body: formData });
             const data = await res.json();
             if (data.status === 'success') {
-                btn.parentElement.innerHTML = `<span class="badge bg-success">${data.tax_type}</span>`;
+                btn.parentElement.innerHTML = getTaxBadge(data.tax_type)
             } else {
                 alert("재조회 실패: " + data.message);
                 btn.disabled = false;

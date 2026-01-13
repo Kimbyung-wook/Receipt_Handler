@@ -360,7 +360,7 @@ def get_tax_type_from_nts(biz_no, service_key):
 def normalize_tax_type(tax_type):
     
     if tax_type is None:
-        return "NONE"
+        return "오류"
     if "일반" in tax_type:
         return "일반"
     if "간이" in tax_type:

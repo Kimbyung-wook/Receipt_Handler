@@ -11,8 +11,9 @@ from fastapi.responses import FileResponse, JSONResponse
 import zipfile
 from io import BytesIO
 
-from worker import worker_process_receipt
+from worker import worker_process_receipt, get_tax_type_from_nts_with_api_call_counter
 from user_log import get_usage_data
+from receipt_parser_paddle_multi_thread import normalize_tax_type
 
 # Concurrent Processing
 from concurrent.futures import ProcessPoolExecutor
@@ -121,6 +122,24 @@ async def download_all(type: str, request: Request):
     memory_file.seek(0)
     return StreamingResponse(memory_file, media_type="application/zip", 
                              headers={"Content-Disposition": f"attachment; filename=receipts_{client_ip}_{type}.zip"})
+
+@app.post("/api/retry_tax")
+async def getTaxType(request: Request, biz_no: Optional[str] = Form(None), user_key: Optional[str] = Form(None)):
+    client_ip = request.client.host.replace(":", "_")
+    
+    active_key = user_key if user_key else config['ocr']['default_service_key']
+    tax_type = get_tax_type_from_nts_with_api_call_counter(client_ip, biz_no, active_key)
+    tax_type = normalize_tax_type(tax_type)
+
+    if("오류" in tax_type):
+        return {"status"   : "failure",
+                "message"  : "failed to get tax_type",
+                "tax_type" : tax_type}
+    else:
+        return {"status"   : "success",
+                "message"  : "success",
+                "tax_type" : tax_type}
+
 
 # 헬퍼 함수: IP별 독립 경로 생성
 def get_user_path(base_dir, request: Request):

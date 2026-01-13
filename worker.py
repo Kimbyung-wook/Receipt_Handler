@@ -40,6 +40,7 @@ def get_tax_type_from_nts_with_api_call_counter(client_ip, biz_no, service_key):
     
         except Exception as e:
             print("Failed to get TaxType from Biz_no : ", biz_no)
+            print("getTaxType : ", client_ip, biz_no)
             print(e)
             return "오류"
 
@@ -77,8 +78,6 @@ def worker_process_receipt(file_info, client_ip, active_key, upload_dir, result_
         text = extract_text_from_paddle(ocr_res)
         textline = get_ocr_lines(ocr_res)
 
-        biz_no = extract_biz_number(text)
-        merchant = extract_merchant_name(textline)
         if "거래일시" in textline:
             pay_date = extract_payment_date_with_keyword(textline)
         else:
