@@ -34,8 +34,8 @@ os.makedirs(OCR_VIS_DIR, exist_ok=True)
 
 # 1. 글로벌 프로세스 풀 생성 (CPU 코어 수에 맞춰 설정)
 # 서버 시작 시 한 번만 생성됩니다.
-# executor = ProcessPoolExecutor(max_workers=os.cpu_count() // 2)
-executor = ProcessPoolExecutor(max_workers=2)
+executor = ProcessPoolExecutor(max_workers=os.cpu_count() // 2)
+# executor = ProcessPoolExecutor(max_workers=2)
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
