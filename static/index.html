@@ -164,6 +164,7 @@
 
     // Click Event : 업로드된 파일 전체 삭제
     document.getElementById('clearAllBtn').addEventListener('click', () => {
+        if (uploadedFiles.length === 0) return alert('삭제 할 파일이 없습니다.');
         uploadedFiles = [];
         renderFileList();
     });
@@ -191,6 +192,30 @@
     // 전역으로 선언
     let currentN = 0;
 
+    function initButtons(){
+        document.getElementById('clearAllBtn').disabled = false;
+        document.getElementById('processBtn').disabled = false;
+        document.getElementById('downloadCsv').disabled = true;
+        document.getElementById('downloadOriginZip').disabled = true;
+        document.getElementById('downloadVisZip').disabled = true;
+    }
+
+    function disableButtons(){
+        document.getElementById('clearAllBtn').disabled = true;
+        document.getElementById('processBtn').disabled = true;
+        document.getElementById('downloadCsv').disabled = true;
+        document.getElementById('downloadOriginZip').disabled = true;
+        document.getElementById('downloadVisZip').disabled = true;
+    }
+
+    function enableButtons(){
+        document.getElementById('clearAllBtn').disabled = false;
+        document.getElementById('processBtn').disabled = false;
+        document.getElementById('downloadCsv').disabled = false;
+        document.getElementById('downloadOriginZip').disabled = false;
+        document.getElementById('downloadVisZip').disabled = false;
+    }
+
     // 2. 서버 전송 및 OCR 처리
     document.getElementById('processBtn').addEventListener('click', async () => {
         const res = await fetch('/api/usage');
@@ -202,10 +227,9 @@
         const userKey = getUserKey();
 
         // 1. 즉시 UI 초기화 (요구사항 1번)
-        processBtn.disabled = true;
+        disableButtons()
         document.getElementById('resultTableBody').innerHTML = ''; 
         lastResultData = [];
-
         // 완료 파일 갯수 초기화
         let completedCount = 0;
         const totalCount = uploadedFiles.length;
@@ -252,6 +276,7 @@
             console.error("에러 발생:", err);
         } finally {
             updateUsage();
+            enableButtons();
             processBtn.innerText = 'OCR 처리 시작';
             processBtn.disabled = false;
             document.getElementById('downloadCsv').disabled = false;
@@ -390,6 +415,8 @@
     // 페이지 로드 시 실행
     window.onload = async () => {
         try {
+            // 화면 초기화
+            initButtons()
             // 2. 요구사항: 접속 IP 표시
             const res = await fetch('/api/my_ip');
             const data = await res.json();
