@@ -8,8 +8,6 @@ from typing import List, Optional
 from fastapi import FastAPI, UploadFile, File, Form, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
-import zipfile
-from io import BytesIO
 
 from worker import worker_process_receipt, get_tax_type_from_nts_with_api_call_counter
 from user_log import get_usage_data
@@ -59,6 +57,7 @@ async def get_my_ip(request: Request):
 @app.post("/api/upload_files")
 async def upload_files(request: Request, files: List[UploadFile] = File(...), user_key: Optional[str] = Form(None)):
     client_ip = request.client.host
+    
     # 유저별 격리된 경로 설정
     u_dir = get_user_path(UPLOAD_DIR, request)
     r_dir = get_user_path(RESULT_DIR, request)
@@ -103,7 +102,10 @@ async def upload_files(request: Request, files: List[UploadFile] = File(...), us
 
 # 전체 다운로드 (Zip) 기능 추가
 # Zip 다운로드 시에도 유저 폴더만 압축하도록 수정
+import zipfile
+from io import BytesIO
 from fastapi.responses import StreamingResponse
+from datetime import datetime
 @app.get("/api/download_all/{type}")
 async def download_all(type: str, request: Request):
     client_ip = request.client.host.replace(":", "_")
@@ -120,8 +122,9 @@ async def download_all(type: str, request: Request):
             if os.path.isfile(file_path):
                 zf.write(file_path, filename)
     memory_file.seek(0)
+    now_time = datetime.now().strftime('%Y%m%d_%H%M%S')
     return StreamingResponse(memory_file, media_type="application/zip", 
-                             headers={"Content-Disposition": f"attachment; filename=receipts_{client_ip}_{type}.zip"})
+                             headers={"Content-Disposition": f"attachment; filename=restaurant_receipts_{now_time}_{type}.zip"})
 
 @app.post("/api/retry_tax")
 async def getTaxType(request: Request, biz_no: Optional[str] = Form(None), user_key: Optional[str] = Form(None)):
@@ -139,7 +142,6 @@ async def getTaxType(request: Request, biz_no: Optional[str] = Form(None), user_
         return {"status"   : "success",
                 "message"  : "success",
                 "tax_type" : tax_type}
-
 
 # 헬퍼 함수: IP별 독립 경로 생성
 def get_user_path(base_dir, request: Request):

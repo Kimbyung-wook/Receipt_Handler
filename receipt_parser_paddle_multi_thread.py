@@ -8,7 +8,6 @@ import csv
 import shutil
 import requests
 import numpy as np
-from PIL import Image
 from paddleocr import PaddleOCR
 from PIL import Image, ImageDraw, ImageFont
 from concurrent.futures import ProcessPoolExecutor, as_completed # 병렬처리
@@ -51,7 +50,6 @@ os.makedirs(OCR_RESULT_DIR, exist_ok=True)
 # )
 
 import platform
-
 def get_system_font(font_size=20):
     os_name = platform.system()
     
@@ -104,7 +102,6 @@ def draw_bb_on_img(img_arr, result):
         draw.text((x, y - 10), text, font=font, fill=(0, 255, 0))  # 초록색 텍스트
 
     return image_pil
-    # image_pil.save(save_path)
 
 # OCR 결과를 줄 대로 받는다.
 def get_ocr_lines(result):
@@ -473,7 +470,6 @@ def main():
     file_paths = [
         os.path.join(INPUT_DIR, f)
         for f in os.listdir(INPUT_DIR)
-        # if f.lower().endswith((".jpg", ".png", ".jpeg", ".pdf"))
         if f.lower().endswith((".jpg", ".png", ".jpeg", ".pdf"))
     ]
 
