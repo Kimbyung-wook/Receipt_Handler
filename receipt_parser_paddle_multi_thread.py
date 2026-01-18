@@ -273,6 +273,20 @@ def extract_merchant_name(lines):
             if i + 1 < len(lines):
                 # print("다음 줄에 있음 @ extract_merchant_name")
                 return clean_merchant_name(lines[i + 1])
+            
+        # 1. 같은 줄에 있는 경우
+        if "가맹점정보" in line:
+            # 예: 가맹점정보: 나주곰탕
+            same_line = re.sub(r".*가맹점정보[:\s]*", "", line).strip()
+            # print("가맹점정보 키워드 찾음 @ extract_merchant_name")
+            if same_line:
+                # print("같은 줄에 있음 @ extract_merchant_name")
+                return clean_merchant_name(same_line)
+
+            # 2. 다음 줄에 있는 경우
+            if i + 1 < len(lines):
+                # print("다음 줄에 있음 @ extract_merchant_name")
+                return clean_merchant_name(lines[i + 1])
 
     return "UNKNOWN"
 
