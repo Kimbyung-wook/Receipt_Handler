@@ -139,3 +139,24 @@ PaddleOCR 기반의 멀티 프로세싱 기술을 활용하여 대량의 영수�
 ## ToDo
 
 1. 과세조회 실패 시 재조회 기능 검증 필요
+
+
+## Troubleshooting
+
+1. Ubuntu 에서 한글 폰트가 깨짐
+
+- 나눔 폰트 설치하기
+
+```bash
+sudo apt-get install fonts-nanum*
+```
+
+- 폰트 캐시 삭제
+
+```bash
+fc-cache -fv
+```
+
+2. NotImplementedError (Unimplemented) ~~~ 에러
+
+paddlepaddle 을 3.0.0 으로 설치한다.
