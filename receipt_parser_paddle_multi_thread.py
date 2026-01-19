@@ -180,24 +180,30 @@ def ocr_image_from_pdf(pdf_path):
     img_arr = resize_for_ocr(img_arr)
     return img_arr
 
-    # ocr_engine = PaddleOCR(
-    #     lang="korean",
-    #     use_doc_orientation_classify=False,
-    #     use_textline_orientation=False,
-    #     # use_angle_cls=False,
-    #     use_doc_unwarping=False,
-    # )
-    # result = ocr_engine.ocr(img_arr)
-    # result = result[0]
-
     # return result, img_arr
 
 # ===============================
 # 3. 정보 추출 함수들
 # ===============================
-def extract_biz_number(text):
-    m = re.search(r'\d{3}-\d{2}-\d{5}', text)
-    return m.group() if m else None
+def extract_biz_number(lines):
+    
+    for i, line in enumerate(lines):
+        m = re.search(r'\d{3}-\d{2}-\d{5}', line)
+        if m is not None:
+            return m.group()
+        
+        
+    for i, line in enumerate(lines):
+        if "사업자" in line and "번호" in line:
+            biz_no_line = lines[i+1]
+            # 1234567891
+            if("-" not in biz_no_line):
+                biz_no = biz_no_line[0:3] + "-" + biz_no_line[3:5] + "-" + biz_no_line[5:10]
+            # 123-45-67891
+            else:
+                biz_no = biz_no_line
+            return biz_no
+            
 
 def extract_payment_date_without_keyword(text):
     patterns = [
@@ -210,13 +216,18 @@ def extract_payment_date_without_keyword(text):
         if m:
             yy = 0; mm = 0; dd = 0
             if (len(m.group(1)) == 4):
+                # print("len4 : ", m)
                 yy = m.group(1)[2:]
                 mm = m.group(2).zfill(2)
                 dd = m.group(3).zfill(2)
                 # if(yy < 2000): # Exception
                 #     continue
             elif (len(m.group(1)) == 2):
-                yy, mm, dd = m.groups()
+                # print("len2 : ", m)
+                # yy, mm, dd = m.groups()
+                yy = m.group(1).zfill(2)
+                mm = m.group(2).zfill(2)
+                dd = m.group(3).zfill(2)
             else:
                 continue
             return f"{yy}{mm}{dd}"
@@ -275,7 +286,7 @@ def extract_merchant_name(lines):
                 return clean_merchant_name(lines[i + 1])
             
         # 1. 같은 줄에 있는 경우
-        if "가맹점정보" in line:
+        elif "가맹점정보" in line:
             # 예: 가맹점정보: 나주곰탕
             same_line = re.sub(r".*가맹점정보[:\s]*", "", line).strip()
             # print("가맹점정보 키워드 찾음 @ extract_merchant_name")
@@ -288,7 +299,8 @@ def extract_merchant_name(lines):
                 # print("다음 줄에 있음 @ extract_merchant_name")
                 return clean_merchant_name(lines[i + 1])
 
-    return "UNKNOWN"
+    # 어떤 조건도 안맞으면 가장 첫 줄이 가맹점명일 것이다.
+    return lines[0]
 
 def normalize_amount(text):
     """
@@ -441,15 +453,16 @@ def process_image(path):
         result = result[0]
 
         text = extract_text_from_paddle(result)
-        textline = get_ocr_lines(result)
+        lines = get_ocr_lines(result)
 
-        biz_no = extract_biz_number(text)
-        merchant = extract_merchant_name(textline)
-        if "거래일시" in textline:
-            pay_date = extract_payment_date_with_keyword(textline)
+        biz_no = extract_biz_number(lines)
+        print("biz_no ", biz_no)
+        merchant = extract_merchant_name(lines)
+        if "거래일시" in lines:
+            pay_date = extract_payment_date_with_keyword(lines)
         else:
             pay_date = extract_payment_date_without_keyword(text)
-        payment_amount = extract_payment_amount(textline)
+        payment_amount = extract_payment_amount(lines)
 
         tax_type = get_tax_type_from_nts(biz_no, SERVICE_KEY)
         print(pay_date, "/", biz_no, "/", merchant, "/", tax_type, "/", payment_amount)

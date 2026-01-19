@@ -76,16 +76,18 @@ def worker_process_receipt(file_info, client_ip, active_key, upload_dir, result_
         ocr_res = ocr_res[0]
         
         text = extract_text_from_paddle(ocr_res)
-        textline = get_ocr_lines(ocr_res)
+        lines = get_ocr_lines(ocr_res)
 
-        if "거래일시" in textline:
-            pay_date = extract_payment_date_with_keyword(textline)
+        if "거래일시" in lines:
+            pay_date = extract_payment_date_with_keyword(lines)
         else:
             pay_date = extract_payment_date_without_keyword(text)
+        # print("paydate : ", pay_date)
 
-        biz_no = extract_biz_number(text)
-        merchant = extract_merchant_name(textline)
-        amount = extract_payment_amount(textline)
+        biz_no = extract_biz_number(lines)
+        # print("biz_no ", biz_no)
+        merchant = extract_merchant_name(lines)
+        amount = extract_payment_amount(lines)
         
         # API 호출 및 로그 기록
         tax_type = "오류"
