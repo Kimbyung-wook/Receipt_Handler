@@ -1,0 +1,17 @@
+# Web Server
+fastapi
+uvicorn
+python-multipart
+
+# Configuration & Data
+pyyaml
+
+# OCR & Image Processing
+# PaddleOCR 실행을 위해 필수적인 라이브러리들입니다.
+paddlepaddle
+paddleocr
+opencv-python
+
+# Utilities
+asyncio
+pdf2image
